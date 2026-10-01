@@ -317,6 +317,31 @@ namespace rpc
   void write_bytes(wire::json_writer&, const get_subaddrs_response&);
 
 
+  struct get_transactions_request
+  {
+    get_transactions_request() = delete;
+    std::vector<crypto::hash> tx_hashes;
+    boost::optional<bool> prune;
+  };
+  void read_bytes(wire::json_reader&, get_transactions_request&);
+
+  struct get_transactions_response
+  {
+    struct entry
+    {
+      crypto::hash hash;
+      std::string tx;
+      boost::optional<std::uint64_t> height;
+      bool in_pool;
+    };
+
+    get_transactions_response() = delete;
+    std::vector<entry> txs;
+    std::vector<crypto::hash> missed_hashes;
+  };
+  void write_bytes(wire::json_writer&, const get_transactions_response&);
+
+
   struct get_version_request
   {
     get_version_request() = delete;

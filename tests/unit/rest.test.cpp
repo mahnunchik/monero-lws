@@ -47,8 +47,10 @@
 #include "rapidjson/stringbuffer.h" // monero/external/rapidjson/incldue
 #include "rapidjson/prettywriter.h" // monero/external/rapidjson/incldue
 #include "rest_server.h"
+#include "rpc/daemon_messages.h"    // monero/src
 #include "rpc/pull.test.h"
 #include "scanner.test.h"
+#include "string_tools.h"           // monero/contrib/epee/include
 #include "util/account.test.h"
 #include "util/transaction.test.h"
 
@@ -814,6 +816,66 @@ LWS_CASE("rest_server")
           "\"recipient\":{\"maj_i\":2,\"min_i\":66}}"
         "],\"fees\":[40,41]}"
       );
+    }
+
+    SECTION("get_transactions")
+    {
+      std::vector<cryptonote::tx_destination_entry> destinations;
+      destinations.emplace_back();
+      destinations.back().amount = 8000;
+      destinations.back().addr = base.m_account_address;
+      const lws_test::transaction tx = lws_test::make_tx(lest_env, base, destinations, 20, true);
+      const crypto::hash hash = cryptonote::get_transaction_hash(tx.tx);
+      const crypto::hash missed = crypto::rand<crypto::hash>();
+
+      const auto make_response = [&] (const bool in_pool, const std::uint64_t height)
+      {
+        cryptonote::rpc::GetTransactions::Response resp{};
+        resp.status = cryptonote::rpc::Message::STATUS_OK;
+        resp.txs.emplace(hash, cryptonote::rpc::transaction_info{tx.tx, in_pool, height});
+        resp.missed_hashes.push_back(missed);
+        return cryptonote::rpc::FullMessage::getResponse(resp, rapidjson::Value{0});
+      };
+
+      std::vector<epee::byte_slice> messages;
+      messages.emplace_back(make_response(false, 100));
+      messages.emplace_back(make_response(true, std::numeric_limits<std::uint64_t>::max()));
+      std::atomic<bool> ready{false};
+      boost::thread server_thread(&lws_test::rpc_thread, context.zmq_context(), std::cref(messages), std::ref(ready));
+      const join on_scope_exit{server_thread};
+      while (!ready)
+        boost::this_thread::sleep_for(boost::chrono::milliseconds{10});
+
+      const std::string hash_hex = epee::to_hex::string(epee::as_byte_span(hash));
+      const std::string missed_hex = epee::to_hex::string(epee::as_byte_span(missed));
+
+      cryptonote::transaction pruned_tx = tx.tx;
+      pruned_tx.pruned = true;
+      const std::string pruned_hex =
+        epee::string_tools::buff_to_hex_nodelimer(cryptonote::t_serializable_object_to_blob(pruned_tx));
+      const std::string full_hex =
+        epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(tx.tx));
+      EXPECT(pruned_hex.size() < full_hex.size());
+
+      message = "{\"tx_hashes\":[\"" + hash_hex + "\",\"" + missed_hex + "\"]}";
+      response = invoke(client, "/get_transactions", message);
+      EXPECT(response ==
+        "{\"txs\":[{\"hash\":\"" + hash_hex + "\",\"tx\":\"" + pruned_hex + "\",\"height\":100,\"in_pool\":false}],"
+        "\"missed_hashes\":[\"" + missed_hex + "\"]}"
+      );
+
+      message = "{\"tx_hashes\":[\"" + hash_hex + "\",\"" + missed_hex + "\"],\"prune\":false}";
+      response = invoke(client, "/get_transactions", message);
+      EXPECT(response ==
+        "{\"txs\":[{\"hash\":\"" + hash_hex + "\",\"tx\":\"" + full_hex + "\",\"in_pool\":true}],"
+        "\"missed_hashes\":[\"" + missed_hex + "\"]}"
+      );
+
+      message = "{\"tx_hashes\":[";
+      for (unsigned i = 0; i < 101; ++i)
+        message += (i ? ",\"" : "\"") + hash_hex + "\"";
+      message += "]}";
+      EXPECT(invoke_base(client, "/get_transactions", message).second == 500);
     }
 
     SECTION("provision_subaddrs")

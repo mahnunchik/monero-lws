@@ -833,6 +833,32 @@ namespace lws
     wire::object(dest, WIRE_FIELD(all_subaddrs));
   }
 
+  void rpc::read_bytes(wire::json_reader& source, get_transactions_request& self)
+  {
+    // Same limit as monerod in restricted mode
+    using max_tx_hashes = wire::max_element_count<100>;
+    wire::object(source,
+      wire::field("tx_hashes", wire::array<max_tx_hashes>(std::ref(self.tx_hashes))),
+      WIRE_OPTIONAL_FIELD(prune)
+    );
+  }
+  namespace rpc
+  {
+    static void write_bytes(wire::json_writer& dest, const get_transactions_response::entry& self)
+    {
+      wire::object(dest,
+        WIRE_FIELD(hash),
+        WIRE_FIELD(tx),
+        WIRE_OPTIONAL_FIELD(height),
+        WIRE_FIELD_COPY(in_pool)
+      );
+    }
+  }
+  void rpc::write_bytes(wire::json_writer& dest, const get_transactions_response& self)
+  {
+    wire::object(dest, WIRE_FIELD(txs), WIRE_FIELD(missed_hashes));
+  }
+
   void rpc::read_bytes(wire::json_reader& source, get_unspent_outs_request& self)
   {
     std::string address;

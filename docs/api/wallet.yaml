@@ -296,6 +296,76 @@ paths:
           description: Invalid JSON schema, and general errors.
         '503':
           description: Unable to read from database.
+  /get_transactions:
+    post:
+      tags:
+        - transaction
+      summary: Get transactions by hash
+      description: |
+        Gets transactions from the blockchain and the mempool of the monero daemon. The server does not verify the transaction hashes.
+      operationId: get_transactions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tx_hashes:
+                  description: Hashes of the transactions. Maximum of 100.
+                  type: array
+                  maxItems: 100
+                  items:
+                    $ref: '#/components/schemas/binary32'
+                prune:
+                  description: If `true`, `tx` contains only the transaction prefix and the RingCT base (no signatures or range proofs). Default is `true`.
+                  type: boolean
+              required:
+                - tx_hashes
+        required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  txs:
+                    description: Transactions that the daemon found. The order is not specified. Omitted if empty.
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hash:
+                          $ref: '#/components/schemas/binary32'
+                        tx:
+                          description: Transaction in the monero binary format, pruned or full as set by `prune`.
+                          allOf:
+                            - $ref: '#/components/schemas/binary'
+                        height:
+                          description: Block height of the transaction. Omitted if `in_pool` is `true`.
+                          allOf:
+                            - $ref: '#/components/schemas/uint64'
+                        in_pool:
+                          description: The transaction is in the mempool.
+                          type: boolean
+                      required:
+                        - hash
+                        - tx
+                        - in_pool
+                  missed_hashes:
+                    description: Hashes that the daemon did not find. Omitted if empty.
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/binary32'
+        '400':
+          description: Invalid JSON.
+        '405':
+          description: Not `POST` method.
+        '500':
+          description: Invalid JSON schema, more than 100 hashes, and general errors.
+        '503':
+          description: Unable to contact monero daemon.
   /get_tree_path:
     post:
       tags:
